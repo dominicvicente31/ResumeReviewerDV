@@ -25,3 +25,12 @@ class User(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class RevokedToken(Base):
+    """Stores JTIs of explicitly logged-out tokens until their natural expiry."""
+
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

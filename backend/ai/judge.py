@@ -13,9 +13,12 @@ Design notes
     2. Whether the evidence quote is verifiable in the resume text.
 """
 
+import os
 import re
 import anthropic
 from .schemas import JobRequirement, LLMJudgment, RequirementResult, Verdict
+
+_DEFAULT_MODEL = os.environ.get("AI_MODEL", "claude-sonnet-4-6")
 
 _SYSTEM_PROMPT = """You are a resume screening assistant. You evaluate one job requirement at a time.
 
@@ -78,7 +81,7 @@ def judge_requirement(
     resume_text: str,
     requirement: JobRequirement,
     client: anthropic.Anthropic,
-    model: str = "claude-opus-4-7",
+    model: str = _DEFAULT_MODEL,
     num_runs: int = 2,
 ) -> RequirementResult:
     """

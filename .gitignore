@@ -48,6 +48,9 @@ htmlcov/
 uploads/
 resumes/
 
+# Root .env (real secrets — never commit)
+/.env
+
 # Node (if frontend added later)
 node_modules/
 .next/

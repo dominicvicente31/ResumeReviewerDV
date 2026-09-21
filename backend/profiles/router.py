@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -56,13 +56,15 @@ async def create_profile(
 
 @router.get("", response_model=list[ProfileListItem])
 async def list_profiles(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     stmt = select(JobProfile)
     if current_user.role != Role.ADMIN:
         stmt = stmt.where(JobProfile.is_active.is_(True))
-    stmt = stmt.order_by(JobProfile.created_at.desc())
+    stmt = stmt.order_by(JobProfile.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 

@@ -1,14 +1,12 @@
-import os
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+from backend.config import settings
 
-_SECRET_KEY = os.environ["JWT_SECRET_KEY"]
-_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-_EXPIRE_HOURS = int(os.environ.get("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(plain: str) -> str:
@@ -20,11 +18,39 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=_EXPIRE_HOURS)
-    payload = {"sub": user_id, "role": role, "exp": expire}
-    return jwt.encode(payload, _SECRET_KEY, algorithm=_ALGORITHM)
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.access_token_expire_hours)
+    payload = {
+        "sub": user_id,
+        "role": role,
+        "type": "access",
+        "jti": str(uuid.uuid4()),
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def create_refresh_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    payload = {
+        "sub": user_id,
+        "type": "refresh",
+        "jti": str(uuid.uuid4()),
+        "exp": expire,
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str) -> dict:
-    """Raise JWTError if the token is invalid or expired."""
-    return jwt.decode(token, _SECRET_KEY, algorithms=[_ALGORITHM])
+    """Raise JWTError if the token is invalid, expired, or not an access token."""
+    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    if payload.get("type") != "access":
+        raise JWTError("Not an access token")
+    return payload
+
+
+def decode_refresh_token(token: str) -> dict:
+    """Raise JWTError if the token is invalid, expired, or not a refresh token."""
+    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    if payload.get("type") != "refresh":
+        raise JWTError("Not a refresh token")
+    return payload
