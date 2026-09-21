@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from .models import Role, User
+from .models import Role, RevokedToken, User
 from .service import decode_token
 
 _bearer = HTTPBearer()
@@ -19,11 +19,20 @@ async def get_current_user(
     try:
         payload = decode_token(token)
         user_id: str = payload["sub"]
+        jti: str | None = payload.get("jti")
     except (JWTError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
+    if jti:
+        revoked = await db.execute(select(RevokedToken).where(RevokedToken.jti == jti))
+        if revoked.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
