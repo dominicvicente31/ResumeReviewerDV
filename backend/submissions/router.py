@@ -1,25 +1,21 @@
-import asyncio
 import logging
 import uuid
 from pathlib import Path
 
-import anthropic
+from arq import ArqRedis
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.ai import compute_score, judge_requirement
-from backend.ai.schemas import JobRequirement as AIJobRequirement, RequirementResult, Verdict
 from backend.auth.dependencies import get_current_user, require_admin
 from backend.auth.models import User
 from backend.config import settings
 from backend.database import get_db
 from backend.limiter import limiter
 from backend.parsing import parse_resume
-from backend.profiles.models import JobProfile
 
-from .models import Submission, SubmissionResult
+from .models import Submission, SubmissionStatus
 from .schemas import SubmissionListItem, SubmissionResponse
 
 logger = logging.getLogger(__name__)
@@ -29,10 +25,8 @@ UPLOAD_DIR = Path(settings.upload_dir)
 
 _ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
-_MAX_RESUME_CHARS = 50_000           # ~12 500 tokens
-_AI_TIMEOUT_SECONDS = 120.0
+_MAX_RESUME_CHARS = 50_000
 
-# Magic bytes: PDF = %PDF, DOCX = ZIP (PK\x03\x04)
 _MAGIC = {
     ".pdf": b"%PDF",
     ".docx": b"PK\x03\x04",
@@ -48,6 +42,10 @@ def _check_magic(data: bytes, ext: str) -> bool:
     return expected is not None and data[: len(expected)] == expected
 
 
+async def _get_arq(request: Request) -> ArqRedis:
+    return request.app.state.arq
+
+
 async def _load_submission(submission_id: int, db: AsyncSession) -> Submission:
     result = await db.execute(
         select(Submission)
@@ -60,7 +58,7 @@ async def _load_submission(submission_id: int, db: AsyncSession) -> Submission:
     return sub
 
 
-@router.post("", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SubmissionResponse, status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("10/hour")
 async def submit_resume(
     request: Request,
@@ -68,6 +66,7 @@ async def submit_resume(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    arq: ArqRedis = Depends(_get_arq),
 ):
     ext = _ext(file.filename or "")
     if ext not in _ALLOWED_EXTENSIONS:
@@ -104,104 +103,30 @@ async def submit_resume(
             detail="Resume exceeds maximum allowed length",
         )
 
+    # Validate the profile exists before creating the submission
+    from sqlalchemy.orm import selectinload as _sli
+    from backend.profiles.models import JobProfile
+    profile_result = await db.execute(
+        select(JobProfile).where(JobProfile.id == profile_id, JobProfile.is_active.is_(True))
+    )
+    if profile_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job profile not found")
+
     safe_filename = f"{uuid.uuid4()}{ext}"
-    safe_path = UPLOAD_DIR / safe_filename
-    safe_path.write_bytes(data)
-    logger.info("Saved resume %s for user %s", safe_filename, current_user.id)
 
-    try:
-        profile_result = await db.execute(
-            select(JobProfile)
-            .options(selectinload(JobProfile.requirements))
-            .where(JobProfile.id == profile_id, JobProfile.is_active.is_(True))
-        )
-        profile = profile_result.scalar_one_or_none()
-        if profile is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job profile not found")
-        if not profile.requirements:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Job profile has no requirements",
-            )
+    submission = Submission(
+        user_id=current_user.id,
+        job_profile_id=profile_id,
+        resume_filename=safe_filename,
+        status=SubmissionStatus.pending,
+    )
+    db.add(submission)
+    await db.commit()
+    await db.refresh(submission)
 
-        ai_reqs = [
-            AIJobRequirement(
-                id=req.id,
-                text=req.text,
-                weight=req.weight,
-                must_have=req.must_have,
-            )
-            for req in profile.requirements
-        ]
-
-        client = anthropic.Anthropic()
-        loop = asyncio.get_running_loop()
-
-        try:
-            raw = await asyncio.wait_for(
-                asyncio.gather(
-                    *[
-                        loop.run_in_executor(None, judge_requirement, resume_text, ai_req, client)
-                        for ai_req in ai_reqs
-                    ],
-                    return_exceptions=True,
-                ),
-                timeout=_AI_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="AI scoring timed out — please try again",
-            )
-
-        req_results: list[RequirementResult] = []
-        for i, result in enumerate(raw):
-            if isinstance(result, Exception):
-                logger.error("Failed to judge requirement %s: %s", ai_reqs[i].id, result)
-                req_results.append(
-                    RequirementResult(
-                        requirement_id=ai_reqs[i].id,
-                        verdict=Verdict.not_met,
-                        evidence="",
-                        rationale="Evaluation failed — treated as not met",
-                        evidence_verified=False,
-                        confidence=0.0,
-                    )
-                )
-            else:
-                req_results.append(result)
-
-        overall = compute_score(req_results, ai_reqs)
-
-        submission = Submission(
-            user_id=current_user.id,
-            job_profile_id=profile_id,
-            resume_filename=safe_filename,
-            overall_score=overall.score,
-            capped_by_must_have=overall.capped_by_must_have,
-        )
-        db.add(submission)
-        await db.flush()
-
-        for r in overall.per_requirement:
-            db.add(
-                SubmissionResult(
-                    submission_id=submission.id,
-                    requirement_id=r.requirement_id,
-                    verdict=r.verdict.value,
-                    evidence=r.evidence,
-                    rationale=r.rationale,
-                    evidence_verified=r.evidence_verified,
-                    confidence=r.confidence,
-                )
-            )
-
-        await db.commit()
-        logger.info("Submission %s scored %.1f for user %s", submission.id, overall.score, current_user.id)
-
-    finally:
-        # File served its purpose (parsing + scoring); remove it to prevent disk accumulation
-        safe_path.unlink(missing_ok=True)
+    # Enqueue scoring job — worker picks it up asynchronously
+    await arq.enqueue_job("score_resume", submission.id, resume_text)
+    logger.info("Enqueued scoring for submission %s (user %s)", submission.id, current_user.id)
 
     return await _load_submission(submission.id, db)
 
@@ -232,7 +157,7 @@ async def list_submissions(
 ):
     result = await db.execute(
         select(Submission)
-        .order_by(Submission.overall_score.desc())
+        .order_by(Submission.overall_score.desc().nullslast())
         .offset(skip)
         .limit(limit)
     )
@@ -246,7 +171,6 @@ async def get_submission(
     db: AsyncSession = Depends(get_db),
 ):
     from backend.auth.models import Role
-
     sub = await _load_submission(submission_id, db)
     if current_user.role != Role.ADMIN and sub.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -256,10 +180,22 @@ async def get_submission(
 @router.post("/{submission_id}/rescore", response_model=SubmissionResponse)
 async def rescore_submission(
     submission_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
+    arq: ArqRedis = Depends(_get_arq),
 ):
+    from backend.ai import compute_score
+    from backend.ai.schemas import JobRequirement as AIJobRequirement, RequirementResult, Verdict
+    from backend.profiles.models import JobProfile
+
     sub = await _load_submission(submission_id, db)
+
+    if sub.status not in (SubmissionStatus.completed, SubmissionStatus.failed):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot rescore a submission that is still pending or processing",
+        )
 
     profile_result = await db.execute(
         select(JobProfile)

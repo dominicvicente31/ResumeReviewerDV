@@ -2,6 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,7 +13,7 @@ from sqlalchemy import text
 
 from backend.config import settings
 from backend.auth.router import router as auth_router
-from backend.database import Base, engine, get_db
+from backend.database import Base, engine
 from backend.limiter import limiter
 from backend.profiles.router import router as profiles_router
 from backend.submissions.router import UPLOAD_DIR, router as submissions_router
@@ -33,8 +35,13 @@ async def lifespan(app: FastAPI):
     Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    app.state.arq = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     logger.info("Application startup complete — env=%s", settings.env)
+
     yield
+
+    await app.state.arq.aclose()
     logger.info("Application shutdown")
 
 

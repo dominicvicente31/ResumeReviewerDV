@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel
+
+from .models import SubmissionStatus
 
 
 class SubmissionResultResponse(BaseModel):
@@ -19,8 +22,9 @@ class SubmissionResponse(BaseModel):
     user_id: str
     job_profile_id: int
     resume_filename: str
-    overall_score: float
-    capped_by_must_have: bool
+    status: SubmissionStatus
+    overall_score: Optional[float]
+    capped_by_must_have: Optional[bool]
     created_at: datetime
     results: list[SubmissionResultResponse]
 
@@ -32,8 +36,9 @@ class SubmissionListItem(BaseModel):
     user_id: str
     job_profile_id: int
     resume_filename: str
-    overall_score: float
-    capped_by_must_have: bool
+    status: SubmissionStatus
+    overall_score: Optional[float]
+    capped_by_must_have: Optional[bool]
     created_at: datetime
 
     model_config = {"from_attributes": True}
