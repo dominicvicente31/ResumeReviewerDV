@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # File storage
     upload_dir: str = "uploads"
 
+    # Redis (job queue + future caching)
+    redis_url: str = "redis://localhost:6379"
+
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_must_be_secure(cls, v: str) -> str:

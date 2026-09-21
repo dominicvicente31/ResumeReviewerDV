@@ -1,0 +1,14 @@
+.env
+.git
+.gitignore
+.claude/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+uploads/
+*.md
+alembic.ini
+migrations/versions/
