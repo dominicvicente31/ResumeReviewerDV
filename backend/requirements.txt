@@ -20,3 +20,5 @@ arq>=0.25.0
 pydantic-settings>=2.0.0
 # migrations
 alembic>=1.13.0
+# email
+aiosmtplib>=3.0.0

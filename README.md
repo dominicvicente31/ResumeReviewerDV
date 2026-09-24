@@ -4,7 +4,7 @@ An AI-powered resume screening tool. Admins define job profiles with weighted re
 
 ## Status
 
-Backend is complete and production-hardened. Frontend is next.
+Backend is feature-complete. Core infrastructure (auth, scoring pipeline, job queue, Docker) is production-hardened. A handful of items below must be finished before a first real deployment. Frontend is next.
 
 ---
 
@@ -12,6 +12,7 @@ Backend is complete and production-hardened. Frontend is next.
 
 ### User
 - Sign up / log in with JWT auth (access + refresh tokens)
+- Email verification on signup (resendable, 24-hour token)
 - Browse active job profiles
 - Upload a resume (PDF or DOCX, up to 10 MB)
 - Receive an async scoring report: overall score, per-requirement verdict, evidence, rationale, confidence
@@ -31,7 +32,8 @@ Backend is complete and production-hardened. Frontend is next.
 |---|---|
 | Backend | FastAPI (async Python) |
 | Database | PostgreSQL + SQLAlchemy (async) + Alembic |
-| Auth | JWT (access + refresh tokens), bcrypt, token revocation |
+| Auth | JWT (access + refresh tokens), bcrypt, token revocation, email verification |
+| Email | aiosmtplib (SMTP); logs link to stdout when `SMTP_HOST` is unset |
 | Job Queue | ARQ (Redis-backed async worker) |
 | AI | Anthropic Claude via structured output |
 | Parsing | pdfplumber (PDF), python-docx (DOCX) |
@@ -158,11 +160,13 @@ docker-compose down -v
 ### Auth
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/auth/signup` | Register (5/min rate limit) |
+| POST | `/auth/signup` | Register — sends verification email (5/min rate limit) |
 | POST | `/auth/login` | Login (10/min, lockout after 10 failures) |
 | POST | `/auth/logout` | Revoke current access token |
 | POST | `/auth/refresh` | Issue new token pair from refresh token |
-| GET | `/auth/me` | Current user info |
+| GET | `/auth/me` | Current user info (includes `is_verified`) |
+| GET | `/auth/verify-email?token=` | Mark email as verified via token from signup email |
+| POST | `/auth/resend-verification` | Re-send verification email (3/hour, silent on unknown addresses) |
 
 ### Profiles (admin-managed)
 | Method | Endpoint | Description |
@@ -192,7 +196,8 @@ docker-compose down -v
 ## Security Highlights
 
 - Passwords: bcrypt with strength requirements (8+ chars, upper, lower, digit, special)
-- Tokens: JWT with `jti`, typed (`access`/`refresh`), token revocation on logout
+- Tokens: JWT with `jti`, typed (`access`/`refresh`/`verify_email`), token revocation on logout
+- Email verification: 24-hour signed JWT; resend endpoint is silent on unknown addresses to prevent enumeration
 - Account lockout: 10 failed logins → 15-minute lockout
 - Rate limiting: per-endpoint via slowapi
 - File validation: extension + magic byte check, 10 MB cap, 50k char text limit
@@ -225,6 +230,22 @@ Worker picks up job:
 GET /submissions/{id}
   └─ client polls until status = "completed"
 ```
+
+---
+
+## Before Deploying
+
+The backend is feature-complete but these items must be addressed before a production deployment:
+
+| Item | Status | Notes |
+|---|---|---|
+| Alembic migrations | ❌ Missing | `alembic/` directory doesn't exist. `create_all` works for a fresh DB but won't handle schema changes in production. Run `alembic init alembic`, create a baseline, then generate a migration for the `is_verified` column. |
+| SMTP configured | ⚠️ Optional | Without `SMTP_HOST`, verification links log to stdout only. Set real SMTP creds before launch. |
+| Sentry initialized | ⚠️ Wired but inactive | `SENTRY_DSN` is in config but `sentry_sdk` is never called in `main.py`. Add `sentry_sdk.init(dsn=settings.sentry_dsn)` if you want error tracking. |
+| `is_verified` enforcement | ⚠️ Unenforced | The field exists and gets set, but login does not check it. Decide whether unverified users should be blocked or just restricted, and add the check to the login endpoint. |
+| Test suite | ❌ Missing | No tests exist. At minimum: auth flow, submission upload + status polling, score aggregation logic. |
+| Secrets rotation plan | ❌ Not defined | Document how to rotate `JWT_SECRET_KEY` (invalidates all sessions) and `ANTHROPIC_API_KEY`. |
+| Resume file storage | ⚠️ Local disk | Files are written to `UPLOAD_DIR` on the container filesystem. For multi-container or cloud deployments, swap to S3/GCS before launch. |
 
 ---
 

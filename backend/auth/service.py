@@ -40,6 +40,12 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
+def create_verification_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    payload = {"sub": user_id, "type": "verify_email", "exp": expire}
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
 def decode_token(token: str) -> dict:
     """Raise JWTError if the token is invalid, expired, or not an access token."""
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
@@ -53,4 +59,12 @@ def decode_refresh_token(token: str) -> dict:
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
     if payload.get("type") != "refresh":
         raise JWTError("Not a refresh token")
+    return payload
+
+
+def decode_verification_token(token: str) -> dict:
+    """Raise JWTError if the token is invalid, expired, or not a verification token."""
+    payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    if payload.get("type") != "verify_email":
+        raise JWTError("Not a verification token")
     return payload
