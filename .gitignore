@@ -56,5 +56,9 @@ node_modules/
 .next/
 dist/
 
-# Claude
-.claude/settings.local.json
+# Claude Code (contains local absolute paths)
+.claude/
+
+# Local env overrides
+.env.local
+*.env.local

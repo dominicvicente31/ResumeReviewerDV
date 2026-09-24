@@ -9,16 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
+from backend.email import send_verification_email
 from backend.limiter import limiter
 from .dependencies import get_current_user
 from .lockout import login_tracker
 from .models import RevokedToken, User
-from .schemas import LoginRequest, RefreshRequest, SignupRequest, TokenResponse, UserResponse
+from .schemas import LoginRequest, RefreshRequest, ResendVerificationRequest, SignupRequest, TokenResponse, UserResponse
 from .service import (
     create_access_token,
     create_refresh_token,
+    create_verification_token,
     decode_refresh_token,
     decode_token,
+    decode_verification_token,
     hash_password,
     verify_password,
 )
@@ -49,6 +52,13 @@ async def signup(request: Request, body: SignupRequest, db: AsyncSession = Depen
     await db.commit()
     await db.refresh(user)
     logger.info("New user registered: %s", user.id)
+
+    token = create_verification_token(user.id)
+    try:
+        await send_verification_email(user.email, token)
+    except Exception:
+        logger.error("Failed to send verification email to user %s", user.id)
+
     return _make_tokens(user)
 
 
@@ -120,3 +130,49 @@ async def refresh(request: Request, body: RefreshRequest, db: AsyncSession = Dep
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/verify-email", status_code=status.HTTP_200_OK)
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    try:
+        payload = decode_verification_token(token)
+        user_id: str = payload["sub"]
+    except (JWTError, KeyError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification link",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not user.is_verified:
+        user.is_verified = True
+        await db.commit()
+        logger.info("User %s verified email", user.id)
+
+    return {"detail": "Email verified successfully"}
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/hour")
+async def resend_verification(
+    request: Request,
+    body: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    email = body.email.lower().strip()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    # Silently return for unknown emails or already-verified accounts to prevent enumeration
+    if user is None or user.is_verified:
+        return
+
+    token = create_verification_token(user.id)
+    try:
+        await send_verification_email(user.email, token)
+    except Exception:
+        logger.error("Failed to resend verification email to user %s", user.id)

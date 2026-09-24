@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     # Redis (job queue + future caching)
     redis_url: str = "redis://localhost:6379"
 
+    # Email (SMTP) — leave smtp_host unset to log links instead of sending
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@resumereviewerdv.com"
+    app_url: str = "http://localhost:8000"
+
+    # Sentry — leave unset to disable
+    sentry_dsn: str = ""
+
     @field_validator("jwt_secret_key")
     @classmethod
     def jwt_secret_must_be_secure(cls, v: str) -> str:
