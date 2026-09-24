@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from backend.config import settings
+from backend.admin.router import router as admin_router
 from backend.auth.router import router as auth_router
 from backend.database import Base, engine
 from backend.limiter import limiter
@@ -96,5 +97,6 @@ async def health():
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(profiles_router)
 app.include_router(submissions_router)
