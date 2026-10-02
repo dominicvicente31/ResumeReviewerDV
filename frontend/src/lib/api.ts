@@ -92,7 +92,7 @@ export const submissionsApi = {
     });
   },
 
-  get: (id: number) => api.get<Submission>(`/submissions/${id}`),
+  get: (publicId: string) => api.get<Submission>(`/submissions/${publicId}`),
 
   mine: (skip = 0, limit = 50) =>
     api.get<SubmissionListItem[]>("/submissions/me", {
@@ -102,8 +102,8 @@ export const submissionsApi = {
   all: (skip = 0, limit = 100) =>
     api.get<SubmissionListItem[]>("/submissions", { params: { skip, limit } }),
 
-  rescore: (id: number) =>
-    api.post<Submission>(`/submissions/${id}/rescore`),
+  rescore: (publicId: string) =>
+    api.post<Submission>(`/submissions/${publicId}/rescore`),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────

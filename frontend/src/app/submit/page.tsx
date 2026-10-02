@@ -58,7 +58,7 @@ export default function SubmitPage() {
     setSubmitting(true);
     try {
       const { data } = await submissionsApi.submit(Number(profileId), file);
-      router.push(`/submissions/${data.id}`);
+      router.push(`/submissions/${data.public_id}`);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;

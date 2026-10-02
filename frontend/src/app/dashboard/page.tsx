@@ -91,13 +91,13 @@ export default function DashboardPage() {
             {submissions.map((s) => (
               <Link
                 key={s.id}
-                href={`/submissions/${s.id}`}
+                href={`/submissions/${s.public_id}`}
                 className="flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
               >
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">
-                      Submission #{s.id}
+                      {s.public_id}
                     </span>
                     {statusBadge(s.status)}
                     {s.capped_by_must_have && (

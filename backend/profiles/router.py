@@ -61,7 +61,7 @@ async def list_profiles(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    stmt = select(JobProfile)
+    stmt = select(JobProfile).options(selectinload(JobProfile.requirements))
     if current_user.role != Role.ADMIN:
         stmt = stmt.where(JobProfile.is_active.is_(True))
     stmt = stmt.order_by(JobProfile.created_at.desc()).offset(skip).limit(limit)

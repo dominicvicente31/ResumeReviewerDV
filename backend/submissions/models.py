@@ -19,6 +19,8 @@ class Submission(Base):
     __tablename__ = "submissions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # User-facing ID derived from the uploaded file's name, e.g. "jane-doe-resume-a3f9c1"
+    public_id: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
     job_profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("job_profiles.id"), nullable=False)
     resume_filename: Mapped[str] = mapped_column(String, nullable=False)
@@ -27,6 +29,7 @@ class Submission(Base):
     )
     overall_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     capped_by_must_have: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

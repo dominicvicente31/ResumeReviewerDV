@@ -1,4 +1,7 @@
 import logging
+import re
+import secrets
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -46,11 +49,38 @@ async def _get_arq(request: Request) -> ArqRedis:
     return request.app.state.arq
 
 
-async def _load_submission(submission_id: int, db: AsyncSession) -> Submission:
+_MAX_PUBLIC_ID = 30
+_SUFFIX_CHARS = 6  # random hex appended to keep IDs unique when filenames repeat
+
+
+def _slugify_filename(filename: str) -> str:
+    """Lowercase, hyphen-separated name from the file's base name, without extension."""
+    base = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode()  # é -> e
+    return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+
+
+async def _new_public_id(filename: str, db: AsyncSession) -> str:
+    """Filename-based ID, at most 30 characters: '<name up to 23 chars>-<6 hex>'."""
+    room = _MAX_PUBLIC_ID - 1 - _SUFFIX_CHARS
+    slug = _slugify_filename(filename)[:room].strip("-") or "resume"
+    for _ in range(5):
+        candidate = f"{slug}-{secrets.token_hex(_SUFFIX_CHARS // 2)}"
+        taken = await db.execute(select(Submission.id).where(Submission.public_id == candidate))
+        if taken.first() is None:
+            return candidate
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Could not generate a submission ID. Please try again.",
+    )
+
+
+async def _load_submission(public_id: str, db: AsyncSession) -> Submission:
     result = await db.execute(
         select(Submission)
         .options(selectinload(Submission.results))
-        .where(Submission.id == submission_id)
+        .where(Submission.public_id == public_id)
     )
     sub = result.scalar_one_or_none()
     if sub is None:
@@ -115,6 +145,7 @@ async def submit_resume(
     safe_filename = f"{uuid.uuid4()}{ext}"
 
     submission = Submission(
+        public_id=await _new_public_id(file.filename or "", db),
         user_id=current_user.id,
         job_profile_id=profile_id,
         resume_filename=safe_filename,
@@ -128,7 +159,7 @@ async def submit_resume(
     await arq.enqueue_job("score_resume", submission.id, resume_text)
     logger.info("Enqueued scoring for submission %s (user %s)", submission.id, current_user.id)
 
-    return await _load_submission(submission.id, db)
+    return await _load_submission(submission.public_id, db)
 
 
 @router.get("/me", response_model=list[SubmissionListItem])
@@ -164,22 +195,22 @@ async def list_submissions(
     return result.scalars().all()
 
 
-@router.get("/{submission_id}", response_model=SubmissionResponse)
+@router.get("/{public_id}", response_model=SubmissionResponse)
 async def get_submission(
-    submission_id: int,
+    public_id: str,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from backend.auth.models import Role
-    sub = await _load_submission(submission_id, db)
+    sub = await _load_submission(public_id, db)
     if current_user.role != Role.ADMIN and sub.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return sub
 
 
-@router.post("/{submission_id}/rescore", response_model=SubmissionResponse)
+@router.post("/{public_id}/rescore", response_model=SubmissionResponse)
 async def rescore_submission(
-    submission_id: int,
+    public_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
@@ -189,7 +220,7 @@ async def rescore_submission(
     from backend.ai.schemas import JobRequirement as AIJobRequirement, RequirementResult, Verdict
     from backend.profiles.models import JobProfile
 
-    sub = await _load_submission(submission_id, db)
+    sub = await _load_submission(public_id, db)
 
     if sub.status not in (SubmissionStatus.completed, SubmissionStatus.failed):
         raise HTTPException(
@@ -229,4 +260,4 @@ async def rescore_submission(
     sub.capped_by_must_have = overall.capped_by_must_have
 
     await db.commit()
-    return await _load_submission(submission_id, db)
+    return await _load_submission(public_id, db)

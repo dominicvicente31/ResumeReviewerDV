@@ -44,18 +44,21 @@ export interface SubmissionResult {
 
 export interface Submission {
   id: number;
+  public_id: string;
   user_id: string;
   job_profile_id: number;
   resume_filename: string;
   status: SubmissionStatus;
   overall_score: number | null;
   capped_by_must_have: boolean;
+  ai_summary: string | null;
   created_at: string;
   results: SubmissionResult[];
 }
 
 export interface SubmissionListItem {
   id: number;
+  public_id: string;
   job_profile_id: number;
   status: SubmissionStatus;
   overall_score: number | null;
