@@ -29,6 +29,7 @@ class Submission(Base):
     capped_by_must_have: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+    ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )

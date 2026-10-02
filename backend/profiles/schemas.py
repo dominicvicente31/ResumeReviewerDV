@@ -41,6 +41,7 @@ class ProfileListItem(BaseModel):
     keywords: list[str]
     is_active: bool
     created_at: datetime
+    requirements: list[RequirementResponse]
 
     model_config = {"from_attributes": True}
 

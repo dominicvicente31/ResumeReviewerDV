@@ -135,6 +135,16 @@ export default function SubmissionPage({
               </div>
             </div>
 
+            {/* AI summary */}
+            {submission.ai_summary && (
+              <div className="rounded-xl border bg-card p-5 space-y-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Summary
+                </h2>
+                <p className="text-sm leading-relaxed">{submission.ai_summary}</p>
+              </div>
+            )}
+
             {/* Per-requirement results */}
             <div className="space-y-3">
               <h2 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">

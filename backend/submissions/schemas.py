@@ -26,6 +26,7 @@ class SubmissionResponse(BaseModel):
     overall_score: Optional[float]
     capped_by_must_have: Optional[bool]
     created_at: datetime
+    ai_summary: Optional[str]
     results: list[SubmissionResultResponse]
 
     model_config = {"from_attributes": True}

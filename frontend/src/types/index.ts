@@ -51,6 +51,7 @@ export interface Submission {
   overall_score: number | null;
   capped_by_must_have: boolean;
   created_at: string;
+  ai_summary: string | null;
   results: SubmissionResult[];
 }
 
