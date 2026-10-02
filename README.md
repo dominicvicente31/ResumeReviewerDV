@@ -26,6 +26,8 @@ Backend and frontend are feature-complete. Core infrastructure (auth, scoring pi
 
 ---
 
+![Project Architect](image.png)
+
 ## Tech Stack
 
 | Layer | Choice |

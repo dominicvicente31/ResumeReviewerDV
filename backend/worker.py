@@ -15,8 +15,10 @@ from sqlalchemy.orm import selectinload
 
 from backend.ai import compute_score, judge_requirement
 from backend.ai.schemas import JobRequirement as AIJobRequirement, RequirementResult, Verdict
+from backend.auth.models import User
 from backend.config import settings
 from backend.database import AsyncSessionLocal
+from backend.email import send_results_email
 from backend.profiles.models import JobProfile
 from backend.submissions.models import Submission, SubmissionResult, SubmissionStatus
 
@@ -116,6 +118,24 @@ async def score_resume(ctx: dict, submission_id: int, resume_text: str) -> None:
 
             await db.commit()
             logger.info("Submission %s completed — score %.1f", submission_id, overall.score)
+
+            # Send results email — failure must not affect job status
+            try:
+                user = await db.get(User, sub.user_id)
+                if user:
+                    await send_results_email(
+                        to_email=user.email,
+                        submission_id=submission_id,
+                        score=overall.score,
+                        capped_by_must_have=overall.capped_by_must_have,
+                        profile_title=profile.title,
+                    )
+            except Exception as exc:
+                logger.error(
+                    "Failed to send results email for submission %s: %s",
+                    submission_id,
+                    exc,
+                )
 
         except Exception as exc:
             logger.exception("Submission %s scoring failed: %s", submission_id, exc)
