@@ -67,7 +67,7 @@ export default function SubmissionPage({
 
   const { data: submission } = useQuery({
     queryKey: ["submission", id],
-    queryFn: () => submissionsApi.get(Number(id)).then((r) => r.data),
+    queryFn: () => submissionsApi.get(id).then((r) => r.data),
     enabled: !!user,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
@@ -118,7 +118,7 @@ export default function SubmissionPage({
               />
               <div className="space-y-2 text-center sm:text-left">
                 <h1 className="text-xl font-bold">
-                  {profile?.title ?? `Submission #${id}`}
+                  {profile?.title ?? id}
                 </h1>
                 <p className={`text-sm font-medium ${scoreColor(submission.overall_score, submission.capped_by_must_have)}`}>
                   {submission.capped_by_must_have

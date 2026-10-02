@@ -127,11 +127,12 @@ If you did not create an account, ignore this email.</p>
 
 async def send_results_email(
     to_email: str,
-    submission_id: int,
+    submission_id: str,
     score: float,
     capped_by_must_have: bool,
     profile_title: str,
 ) -> None:
+    # submission_id is the submission's public (filename-based) ID
     results_url = f"{settings.frontend_url}/submissions/{submission_id}"
     color = _score_color(score, capped_by_must_have)
     bg = _score_bg(score, capped_by_must_have)

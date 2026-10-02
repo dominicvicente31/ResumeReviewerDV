@@ -27,7 +27,7 @@ export default function AdminSubmissionsPage() {
   });
 
   const rescore = useMutation({
-    mutationFn: (id: number) => submissionsApi.rescore(id),
+    mutationFn: (publicId: string) => submissionsApi.rescore(publicId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["submissions"] }),
   });
 
@@ -66,8 +66,8 @@ export default function AdminSubmissionsPage() {
                 className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-4 py-3"
               >
                 <div>
-                  <Link href={`/submissions/${s.id}`} className="text-sm font-medium hover:underline">
-                    #{s.id}
+                  <Link href={`/submissions/${s.public_id}`} className="text-sm font-medium hover:underline">
+                    {s.public_id}
                   </Link>
                   <p className="text-xs text-muted-foreground">
                     {new Date(s.created_at).toLocaleString()}
@@ -93,7 +93,7 @@ export default function AdminSubmissionsPage() {
                     s.status === "processing" ||
                     rescore.isPending
                   }
-                  onClick={() => rescore.mutate(s.id)}
+                  onClick={() => rescore.mutate(s.public_id)}
                 >
                   Rescore
                 </Button>

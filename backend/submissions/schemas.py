@@ -19,14 +19,15 @@ class SubmissionResultResponse(BaseModel):
 
 class SubmissionResponse(BaseModel):
     id: int
+    public_id: str
     user_id: str
     job_profile_id: int
     resume_filename: str
     status: SubmissionStatus
     overall_score: Optional[float]
     capped_by_must_have: Optional[bool]
-    created_at: datetime
     ai_summary: Optional[str]
+    created_at: datetime
     results: list[SubmissionResultResponse]
 
     model_config = {"from_attributes": True}
@@ -34,6 +35,7 @@ class SubmissionResponse(BaseModel):
 
 class SubmissionListItem(BaseModel):
     id: int
+    public_id: str
     user_id: str
     job_profile_id: int
     resume_filename: str

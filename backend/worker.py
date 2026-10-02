@@ -174,7 +174,7 @@ async def score_resume(ctx: dict, submission_id: int, resume_text: str) -> None:
                 if user:
                     await send_results_email(
                         to_email=user.email,
-                        submission_id=submission_id,
+                        submission_id=sub.public_id,
                         score=overall.score,
                         capped_by_must_have=overall.capped_by_must_have,
                         profile_title=profile.title,
